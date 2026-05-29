@@ -35,6 +35,26 @@ jobs:
         run: |
           flutter doctor -v
 
+      - name: Prepare Release Signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
+            echo "Release signing secrets are missing."
+            echo "Add ANDROID_KEYSTORE_BASE64, ANDROID_KEY_ALIAS, ANDROID_KEYSTORE_PASSWORD, and ANDROID_KEY_PASSWORD in repository secrets."
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/release-keystore.jks
+          cat > android/key.properties <<EOF
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=../release-keystore.jks
+          EOF
+
       - name: Extract Version
         id: extract_version      
         run: |
@@ -47,15 +67,14 @@ jobs:
 
       - name: Build APKs
         run: |
-          sed -i 's/signingConfig = signingConfigs.getByName("release")//g' android/app/build.gradle.kts
           flutter build apk --flavor normal && flutter build apk --split-per-abi --flavor normal
           for file in build/app/outputs/flutter-apk/app-*normal*.apk*; do mv "$file" "${file//-normal/}"; done
           flutter build apk --flavor fdroid -t lib/main_fdroid.dart && flutter build apk --split-per-abi --flavor fdroid -t lib/main_fdroid.dart
           rm ./build/app/outputs/flutter-apk/*.sha1
-          cp ./sign.sh ./build/app/outputs/flutter-apk/
+          sha256sum ./build/app/outputs/flutter-apk/*.apk > ./build/app/outputs/flutter-apk/SHA256SUMS
           ls -l ./build/app/outputs/flutter-apk/
 
-      - name: Save Unsigned APKs as Action Artifacts
+      - name: Save Signed APKs as Action Artifacts
         uses: actions/upload-artifact@v4
         with:
           path: build/app/outputs/flutter-apk/*
@@ -84,4 +103,4 @@ jobs:
           generateReleaseNotes: true
           allowUpdates: true
           replacesArtifacts: true
-          artifacts: "build/app/outputs/flutter-apk/*.apk,build/app/outputs/flutter-apk/sign.sh"
+          artifacts: "build/app/outputs/flutter-apk/*.apk,build/app/outputs/flutter-apk/SHA256SUMS"
