@@ -14,9 +14,9 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_storage/shared_storage.dart' as saf;
 
-String obtainiumTempId = 'imranr98_obtainium_${GitHub().hosts[0]}';
+String obtainiumTempId = 'iam_sandipmaity_obtainium_plus_${GitHub().hosts[0]}';
 String obtainiumId = 'dev.imranr.obtainium';
-String obtainiumUrl = 'https://github.com/ImranR98/Obtainium';
+String obtainiumUrl = 'https://github.com/iam-sandipmaity/Obtainium-plus';
 Color obtainiumThemeColor = const Color(0xFF6438B5);
 
 enum ThemeSettings { system, light, dark }
@@ -31,7 +31,7 @@ class SettingsProvider with ChangeNotifier {
   bool justStarted = true;
   bool isTV = false;
 
-  String sourceUrl = 'https://github.com/ImranR98/Obtainium';
+  String sourceUrl = 'https://github.com/iam-sandipmaity/Obtainium-plus';
 
   // Not done in constructor as we want to be able to await it
   Future<void> initializeSettings() async {

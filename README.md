@@ -1,10 +1,10 @@
 <div align="center"><a href="https://github.com/Safouene1/support-palestine-banner/blob/master/Markdown-pages/Support.md"><img src="https://raw.githubusercontent.com/Safouene1/support-palestine-banner/master/banner-support.svg" alt="Support Palestine" style="width: 100%;"></a></div>
 
-# ![Obtainium Icon](./assets/graphics/icon_small.png) Obtainium
+# ![Obtainium Icon](./assets/graphics/icon_small.png) Obtainium Plus
 
 Get Android app updates straight from the source.
 
-Obtainium allows you to install and update apps directly from their releases pages, and receive notifications when new releases are made available.
+Obtainium Plus allows you to install and update apps directly from their releases pages, and receive notifications when new releases are made available.
 
 More info:
 - [Obtainium Wiki](https://wiki.obtainium.imranr.dev/) ([repository](https://github.com/ImranR98/Obtainium-Wiki))
@@ -13,7 +13,7 @@ More info:
 - [apps.obtainium.imranr.dev](https://apps.obtainium.imranr.dev/) - Crowdsourced app configurations ([repository](https://github.com/ImranR98/apps.obtainium.imranr.dev))
 - [Side Of Burritos - You should use this instead of F-Droid | How to use app RSS feed](https://youtu.be/FFz57zNR_M0) - Original motivation for this app
 - [Website](https://obtainium.imranr.dev) ([repository](https://github.com/ImranR98/obtainium.imranr.dev))
-- [Source code](https://github.com/ImranR98/Obtainium)
+- [Source code](https://github.com/iam-sandipmaity/Obtainium-plus)
 
 Currently supported App sources:
 - Open Source - General:
@@ -57,7 +57,7 @@ Or, contribute some configurations to the website by creating a PR at [this repo
 
 [<img src="https://github.com/machiav3lli/oandbackupx/blob/034b226cea5c1b30eb4f6a6f313e4dadcbb0ece4/badge_github.png"
     alt="Get it on GitHub"
-    height="80">](https://github.com/ImranR98/Obtainium/releases)
+    height="80">](https://github.com/iam-sandipmaity/Obtainium-plus/releases)
 [<img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroid.png"
      alt="Get it on IzzyOnDroid"
      height="80">](https://apt.izzysoft.de/fdroid/index/apk/dev.imranr.obtainium)

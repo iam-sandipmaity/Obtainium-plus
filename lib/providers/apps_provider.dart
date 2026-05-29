@@ -1490,6 +1490,64 @@ class AppsProvider with ChangeNotifier {
     return downloadedIds;
   }
 
+  Future<void> downloadAppFile(
+    App app,
+    MapEntry<String, String> fileUrl,
+    BuildContext context,
+  ) async {
+    NotificationsProvider notificationsProvider = context
+        .read<NotificationsProvider>();
+    var source = SourceProvider().getSource(
+      app.url,
+      overrideSource: app.overrideSource,
+    );
+    var additionalSettingsPlusSourceConfig = {
+      ...app.additionalSettings,
+      ...(await source.getSourceConfigValues(
+        app.additionalSettings,
+        settingsProvider,
+      )),
+    };
+    var finalFileUrl = MapEntry(
+      fileUrl.key,
+      await source.assetUrlPrefetchModifier(
+        await source.generalReqPrefetchModifier(
+          fileUrl.value,
+          additionalSettingsPlusSourceConfig,
+        ),
+        app.url,
+        additionalSettingsPlusSourceConfig,
+      ),
+    );
+    try {
+      String downloadPath = '${await getStorageRootPath()}/Download';
+      await downloadFile(
+        finalFileUrl.value,
+        finalFileUrl.key,
+        true,
+        (double? progress) {
+          notificationsProvider.notify(
+            DownloadNotification(finalFileUrl.key, progress?.ceil() ?? 0),
+          );
+        },
+        downloadPath,
+        headers: await source.getRequestHeaders(
+          app.additionalSettings,
+          finalFileUrl.value,
+          forAPKDownload: finalFileUrl.key.toLowerCase().endsWith('.apk'),
+        ),
+        useExisting: false,
+        allowInsecure: app.additionalSettings['allowInsecure'] == true,
+        logs: logs,
+      );
+      notificationsProvider.notify(
+        DownloadedNotification(finalFileUrl.key, finalFileUrl.value),
+      );
+    } finally {
+      notificationsProvider.cancel(DownloadNotification(finalFileUrl.key, 0).id);
+    }
+  }
+
   Future<Directory> getAppsDir() async {
     Directory appsDir = Directory(
       '${(await getAppStorageDir()).path}/app_data',

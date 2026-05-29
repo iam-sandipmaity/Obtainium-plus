@@ -7,6 +7,7 @@ class Codeberg extends AppSource {
   Codeberg() {
     name = 'Forgejo (Codeberg)';
     hosts = ['codeberg.org'];
+    supportsVersionHistory = true;
 
     additionalSourceAppSpecificSettingFormItems =
         gh.additionalSourceAppSpecificSettingFormItems;
@@ -38,6 +39,24 @@ class Codeberg extends AppSource {
     Map<String, dynamic> additionalSettings,
   ) async {
     return await gh.getLatestAPKDetailsCommon2(standardUrl, additionalSettings, (
+      bool useTagUrl,
+    ) async {
+      final standardUri = Uri.parse(standardUrl);
+      final apiPath =
+          '/api/v1/repos${standardUri.path}/${useTagUrl ? 'tags' : 'releases'}';
+      return standardUri.replace(
+        path: apiPath,
+        queryParameters: {'per_page': '100'},
+      ).toString();
+    }, null);
+  }
+
+  @override
+  Future<List<APKDetails>> getVersionHistory(
+    String standardUrl,
+    Map<String, dynamic> additionalSettings,
+  ) async {
+    return await gh.getVersionHistoryCommon2(standardUrl, additionalSettings, (
       bool useTagUrl,
     ) async {
       final standardUri = Uri.parse(standardUrl);

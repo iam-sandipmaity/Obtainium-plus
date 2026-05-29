@@ -15,6 +15,7 @@ class FDroid extends AppSource {
     name = tr('fdroid');
     naiveStandardVersionDetection = true;
     canSearch = true;
+    supportsVersionHistory = true;
     additionalSourceAppSpecificSettingFormItems = [
       [
         GeneratedFormTextField(
@@ -144,6 +145,25 @@ class FDroid extends AppSource {
       }
     }
     return details;
+  }
+
+  @override
+  Future<List<APKDetails>> getVersionHistory(
+    String standardUrl,
+    Map<String, dynamic> additionalSettings,
+  ) async {
+    String? appId = await tryInferringAppId(standardUrl);
+    String host = Uri.parse(standardUrl).host;
+    return getVersionHistoryFromFDroidPackagesAPIResponse(
+      await sourceRequest(
+        'https://$host/api/v1/packages/$appId',
+        additionalSettings,
+      ),
+      'https://$host/repo/$appId',
+      standardUrl,
+      name,
+      additionalSettings: additionalSettings,
+    );
   }
 
   @override
@@ -287,5 +307,84 @@ class FDroid extends AppSource {
     } else {
       throw getObtainiumHttpError(res);
     }
+  }
+
+  List<APKDetails> getVersionHistoryFromFDroidPackagesAPIResponse(
+    Response res,
+    String apkUrlPrefix,
+    String standardUrl,
+    String sourceName, {
+    Map<String, dynamic> additionalSettings = const {},
+  }) {
+    var filterVersionsByRegEx =
+        (additionalSettings['filterVersionsByRegEx'] as String?)?.isNotEmpty ==
+            true
+        ? additionalSettings['filterVersionsByRegEx']
+        : null;
+    var apkFilterRegEx =
+        (additionalSettings['apkFilterRegEx'] as String?)?.isNotEmpty == true
+        ? additionalSettings['apkFilterRegEx']
+        : null;
+    if (res.statusCode != 200) {
+      throw getObtainiumHttpError(res);
+    }
+
+    var response = jsonDecode(res.body);
+    List<dynamic> releases = response['packages'] ?? [];
+    Map<String, List<MapEntry<String, String>>> apkUrlsByVersion = {};
+    Map<String, DateTime?> releaseDatesByVersion = {};
+    for (var rel in releases) {
+      var version = rel['versionName']?.toString();
+      var versionCode = rel['versionCode'];
+      if (version == null || versionCode == null) {
+        continue;
+      }
+      if (filterVersionsByRegEx != null &&
+          !RegExp(filterVersionsByRegEx).hasMatch(version)) {
+        continue;
+      }
+      String apk = '${apkUrlPrefix}_$versionCode.apk';
+      var apkUrls = filterApks(
+        [MapEntry(apk.split('/').last, apk)],
+        apkFilterRegEx,
+        additionalSettings['invertAPKFilter'],
+      );
+      if (apkUrls.isEmpty) {
+        continue;
+      }
+      apkUrlsByVersion.putIfAbsent(version, () => []);
+      apkUrlsByVersion[version]!.addAll(apkUrls);
+      releaseDatesByVersion.putIfAbsent(
+        version,
+        () => parseFDroidReleaseDate(rel['added'] ?? rel['lastUpdated']),
+      );
+    }
+    var history = apkUrlsByVersion.entries
+        .map(
+          (entry) => APKDetails(
+            entry.key,
+            entry.value.toSet().toList(),
+            AppNames(sourceName, Uri.parse(standardUrl).pathSegments.last),
+            releaseDate: releaseDatesByVersion[entry.key],
+          ),
+        )
+        .toList();
+    if (history.isEmpty) {
+      throw NoReleasesError();
+    }
+    return history;
+  }
+
+  DateTime? parseFDroidReleaseDate(dynamic value) {
+    if (value is int) {
+      final millis = value < 100000000000 ? value * 1000 : value;
+      return DateTime.fromMillisecondsSinceEpoch(
+        millis.toInt(),
+      );
+    }
+    if (value is String) {
+      return DateTime.tryParse(value);
+    }
+    return null;
   }
 }

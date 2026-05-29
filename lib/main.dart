@@ -311,8 +311,8 @@ class _ObtainiumState extends State<Obtainium> {
     } else {
       bool isFirstRun = settingsProvider.checkAndFlipFirstRun();
       if (isFirstRun) {
-        logs.add('This is the first ever run of Obtainium.');
-        // If this is the first run, add Obtainium to the Apps list
+        logs.add('This is the first ever run of Obtainium Plus.');
+        // If this is the first run, add Obtainium Plus to the Apps list
         if (!fdroid) {
           getInstalledInfo(obtainiumId)
               .then((value) {
@@ -321,8 +321,8 @@ class _ObtainiumState extends State<Obtainium> {
                     App(
                       obtainiumId,
                       obtainiumUrl,
-                      'ImranR98',
-                      'Obtainium',
+                      'iam-sandipmaity',
+                      'Obtainium Plus',
                       value!.versionName,
                       value.versionName!,
                       [],

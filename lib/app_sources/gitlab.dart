@@ -17,6 +17,7 @@ class GitLab extends AppSource {
     canSearch = true;
     showReleaseDateAsVersionToggle = true;
     this.hostChanged = hostChanged;
+    supportsVersionHistory = true;
 
     sourceConfigSettingFormItems = [
       GeneratedFormTextField(
@@ -278,5 +279,121 @@ class GitLab extends AppSource {
     }).toList();
 
     return finalResult;
+  }
+
+  @override
+  Future<List<APKDetails>> getVersionHistory(
+    String standardUrl,
+    Map<String, dynamic> additionalSettings,
+  ) async {
+    var names = GitHub(hostChanged: true).getAppNames(standardUrl);
+    String projectUriComponent =
+        '${Uri.encodeComponent(names.author)}%2F${Uri.encodeComponent(names.name)}';
+    String? PAT = await getPATIfAny(hostChanged ? additionalSettings : {});
+    String optionalAuth = (PAT != null) ? 'private_token=$PAT' : '';
+
+    Response res0 = await sourceRequest(
+      'https://${hosts[0]}/api/v4/projects/$projectUriComponent?$optionalAuth',
+      additionalSettings,
+    );
+    if (res0.statusCode != 200) {
+      throw getObtainiumHttpError(res0);
+    }
+    int? projectId = jsonDecode(res0.body)['id'];
+    if (projectId == null) {
+      throw NoReleasesError();
+    }
+
+    Response res = await sourceRequest(
+      'https://${hosts[0]}/api/v4/projects/$projectUriComponent/releases?$optionalAuth',
+      additionalSettings,
+    );
+    if (res.statusCode != 200) {
+      throw getObtainiumHttpError(res);
+    }
+
+    var json = jsonDecode(res.body) as List<dynamic>;
+    List<APKDetails> history = json.map((e) {
+      String? version = (e['tag_name'] ?? e['name'])?.toString();
+      if (version == null) {
+        return null;
+      }
+      var apkUrlsFromAssets = (e['assets']?['links'] as List<dynamic>? ?? [])
+          .map((e) {
+            var url = (e['direct_asset_url'] ?? e['url'] ?? '') as String;
+            var parsedUrl = url.isNotEmpty ? Uri.parse(url) : null;
+            return MapEntry(
+              (e['name'] ??
+                      (parsedUrl != null && parsedUrl.pathSegments.isNotEmpty
+                          ? parsedUrl.pathSegments.last
+                          : 'unknown'))
+                  as String,
+              (e['direct_asset_url'] ?? e['url'] ?? '') as String,
+            );
+          })
+          .where(
+            (s) =>
+                s.key.isNotEmpty &&
+                (s.key.toLowerCase().endsWith('.apk') ||
+                    s.key.toLowerCase().endsWith('.xapk') ||
+                    s.value.toLowerCase().endsWith('.apk') ||
+                    s.value.toLowerCase().endsWith('.xapk')),
+          )
+          .toList();
+      var uploadedAPKsFromDescription = ((e['description'] ?? '') as String)
+          .split('](')
+          .join('\n')
+          .split('.apk)')
+          .join('.apk\n')
+          .split('.xapk)')
+          .join('.xapk\n')
+          .split('\n')
+          .where(
+            (s) =>
+                s.startsWith('/uploads/') &&
+                (s.endsWith('apk') || s.endsWith('xapk')),
+          )
+          .map((s) => 'https://${hosts[0]}/-/project/$projectId$s')
+          .map((l) => MapEntry(Uri.parse(l).pathSegments.last, l))
+          .toList();
+      Map<String, String> apkUrls = {};
+      for (var entry in apkUrlsFromAssets) {
+        apkUrls[entry.key] = entry.value;
+      }
+      for (var entry in uploadedAPKsFromDescription) {
+        apkUrls[entry.key] = entry.value;
+      }
+      var releaseDateString =
+          e['released_at'] ?? e['created_at'] ?? e['commit']?['created_at'];
+      DateTime? releaseDate = releaseDateString != null
+          ? DateTime.parse(releaseDateString)
+          : null;
+      var details = APKDetails(
+        version,
+        apkUrls.entries.toList(),
+        AppNames(names.author, names.name.split('/').last),
+        releaseDate: releaseDate,
+        changeLog: e['description']?.toString(),
+      );
+      details.apkUrls = details.apkUrls.map((apkUrl) {
+        if (RegExp(
+          '^$standardUrl/-/jobs/[0-9]+/artifacts/file/[^/]+',
+        ).hasMatch(apkUrl.value)) {
+          return MapEntry(
+            apkUrl.key,
+            apkUrl.value.replaceFirst('/file/', '/raw/'),
+          );
+        } else {
+          return apkUrl;
+        }
+      }).toList();
+      return details;
+    }).whereType<APKDetails>().where((details) {
+      return details.apkUrls.isNotEmpty;
+    }).toList();
+    if (history.isEmpty) {
+      throw NoReleasesError();
+    }
+    return history;
   }
 }

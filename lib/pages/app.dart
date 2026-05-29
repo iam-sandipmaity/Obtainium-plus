@@ -34,6 +34,7 @@ class _AppPageState extends State<AppPage> {
   bool _wasWebViewOpened = false;
   AppInMemory? prevApp;
   bool updating = false;
+  Future<List<APKDetails>>? _versionHistoryFuture;
 
 Widget buildRepoRenameWarning({
     required AppInMemory? app,
@@ -738,6 +739,179 @@ Widget buildRepoRenameWarning({
       );
     }
 
+    Future<List<APKDetails>> getVersionHistory() async {
+      final appValue = app;
+      final sourceValue = source;
+      if (appValue == null || sourceValue == null) {
+        return [];
+      }
+      var history = await sourceValue.getVersionHistory(
+        appValue.app.url,
+        appValue.app.additionalSettings,
+      );
+      List<APKDetails> filteredHistory = [];
+      for (var release in history) {
+        String? extractedVersion = extractVersion(
+          appValue.app.additionalSettings['versionExtractionRegEx'] as String?,
+          appValue.app.additionalSettings['matchGroupToUse'] as String?,
+          release.version,
+        );
+        if (extractedVersion != null) {
+          release.version = extractedVersion;
+        }
+        if (appValue.app.additionalSettings['releaseDateAsVersion'] == true &&
+            release.releaseDate != null) {
+          release.version = release.releaseDate!.microsecondsSinceEpoch
+              .toString();
+        }
+        release.apkUrls = filterApks(
+          release.apkUrls,
+          appValue.app.additionalSettings['apkFilterRegEx'],
+          appValue.app.additionalSettings['invertAPKFilter'],
+        );
+        if (appValue.app.additionalSettings['autoApkFilterByArch'] == true) {
+          release.apkUrls = await filterApksByArch(release.apkUrls);
+        }
+        if (release.apkUrls.isNotEmpty) {
+          filteredHistory.add(release);
+        }
+      }
+      if (filteredHistory.isEmpty) {
+        throw NoReleasesError();
+      }
+      return filteredHistory;
+    }
+
+    Future<bool> confirmOlderVersionDownload(APKDetails release) async {
+      if (app?.app.installedVersion == null ||
+          release.version == app?.app.latestVersion) {
+        return true;
+      }
+      return await showDialog<bool>(
+            context: context,
+            builder: (BuildContext ctx) {
+              return AlertDialog(
+                title: Text(tr('downloadOlderVersionQuestion')),
+                content: Text(tr('downloadOlderVersionWarning')),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(false),
+                    child: Text(tr('cancel')),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(true),
+                    child: Text(tr('download')),
+                  ),
+                ],
+              );
+            },
+          ) ??
+          false;
+    }
+
+    Future<void> downloadHistoricalRelease(APKDetails release) async {
+      final appValue = app;
+      if (appValue == null || !(await confirmOlderVersionDownload(release))) {
+        return;
+      }
+      if (!mounted) {
+        return;
+      }
+      var historyApp = appValue.app.deepCopy();
+      historyApp.latestVersion = release.version;
+      historyApp.apkUrls = release.apkUrls;
+      historyApp.otherAssetUrls = release.allAssetUrls
+          .where((a) => release.apkUrls.indexWhere((p) => a.key == p.key) < 0)
+          .toList();
+      historyApp.preferredApkIndex = 0;
+      MapEntry<String, String>? selectedFile = await appsProvider
+          .confirmAppFileUrl(
+            historyApp,
+            context,
+            false,
+            evenIfSingleChoice: false,
+          );
+      if (selectedFile == null) {
+        return;
+      }
+      if (!mounted) {
+        return;
+      }
+      try {
+        await appsProvider.downloadAppFile(historyApp, selectedFile, context);
+        if (mounted) {
+          showMessage(tr('downloadedX', args: [selectedFile.key]), context);
+        }
+      } catch (e) {
+        if (mounted) {
+          showError(e, context);
+        }
+      }
+    }
+
+    showVersionHistoryDialog() {
+      _versionHistoryFuture ??= getVersionHistory();
+      return showDialog(
+        context: context,
+        builder: (BuildContext ctx) {
+          return AlertDialog(
+            title: Text(tr('versionHistory')),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: FutureBuilder<List<APKDetails>>(
+                future: _versionHistoryFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const SizedBox(
+                      height: 96,
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return Text(snapshot.error.toString());
+                  }
+                  var releases = snapshot.data ?? [];
+                  return ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 420),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: releases.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        var release = releases[index];
+                        var releaseDate = release.releaseDate?.toLocal();
+                        var subtitleParts = [
+                          if (releaseDate != null)
+                            releaseDate.toString().split('.').first,
+                          plural('apk', release.apkUrls.length),
+                        ];
+                        return ListTile(
+                          leading: const Icon(Icons.history),
+                          title: Text(release.version),
+                          subtitle: Text(subtitleParts.join(' - ')),
+                          trailing: const Icon(Icons.file_download_outlined),
+                          onTap: () async {
+                            Navigator.of(ctx).pop();
+                            await downloadHistoricalRelease(release);
+                          },
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(tr('close')),
+              ),
+            ],
+          );
+        },
+      );
+    }
+
     handleAdditionalOptionChanges(Map<String, dynamic>? values) {
       if (app != null && values != null) {
         Map<String, dynamic> originalSettings = app.app.additionalSettings;
@@ -889,6 +1063,14 @@ Widget buildRepoRenameWarning({
                         : showMarkUpdatedDialog,
                     tooltip: tr('markUpdated'),
                     icon: const Icon(Icons.done),
+                  ),
+                if (source?.supportsVersionHistory == true && !trackOnly)
+                  IconButton(
+                    onPressed: app?.downloadProgress != null || updating
+                        ? null
+                        : showVersionHistoryDialog,
+                    tooltip: tr('versionHistory'),
+                    icon: const Icon(Icons.history),
                   ),
                 if ((!isVersionDetectionStandard || trackOnly) &&
                     app?.app.installedVersion != null &&

@@ -67,6 +67,10 @@ class APKDetails {
   });
 }
 
+class VersionHistoryNotSupportedError extends ObtainiumError {
+  VersionHistoryNotSupportedError() : super(tr('versionHistoryNotSupported'));
+}
+
 List<List<String>> stringMapListTo2DList(
   List<MapEntry<String, String>> mapList,
 ) => mapList.map((e) => [e.key, e.value]).toList();
@@ -650,6 +654,7 @@ abstract class AppSource {
   List<String> excludeCommonSettingKeys = [];
   bool urlsAlwaysHaveExtension = false;
   bool allowIncludeZips = false;
+  bool supportsVersionHistory = false;
 
   AppSource() {
     name = runtimeType.toString();
@@ -727,6 +732,13 @@ abstract class AppSource {
     Map<String, dynamic> additionalSettings,
   ) {
     throw NotImplementedError();
+  }
+
+  Future<List<APKDetails>> getVersionHistory(
+    String standardUrl,
+    Map<String, dynamic> additionalSettings,
+  ) {
+    throw VersionHistoryNotSupportedError();
   }
 
   // Different Sources may need different kinds of additional data for Apps
