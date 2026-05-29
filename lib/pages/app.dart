@@ -800,7 +800,7 @@ Widget buildRepoRenameWarning({
                   ),
                   TextButton(
                     onPressed: () => Navigator.of(ctx).pop(true),
-                    child: Text(tr('download')),
+                    child: Text(tr('install')),
                   ),
                 ],
               );
@@ -834,13 +834,22 @@ Widget buildRepoRenameWarning({
       if (selectedFile == null) {
         return;
       }
+      var selectedIndex = historyApp.apkUrls.indexWhere(
+        (url) => url.value == selectedFile.value,
+      );
+      if (selectedIndex >= 0) {
+        historyApp.preferredApkIndex = selectedIndex;
+      }
       if (!mounted) {
         return;
       }
       try {
-        await appsProvider.downloadAppFile(historyApp, selectedFile, context);
-        if (mounted) {
-          showMessage(tr('downloadedX', args: [selectedFile.key]), context);
+        var installed = await appsProvider.downloadAndInstallSpecificAppVersion(
+          historyApp,
+          context,
+        );
+        if (mounted && installed) {
+          showMessage(tr('installed'), context);
         }
       } catch (e) {
         if (mounted) {

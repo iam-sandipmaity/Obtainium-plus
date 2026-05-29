@@ -896,6 +896,7 @@ class AppsProvider with ChangeNotifier {
     BuildContext? firstTimeWithContext, {
     bool needsBGWorkaround = false,
     bool shizukuPretendToBeGooglePlay = false,
+    String? installedVersionOverride,
   }) async {
     // We don't know which APKs in an XAPK or ZIP are supported by the user's device
     // So we try installing all of them and assume success if at least one installed
@@ -934,6 +935,7 @@ class AppsProvider with ChangeNotifier {
           firstTimeWithContext,
           needsBGWorkaround: needsBGWorkaround,
           shizukuPretendToBeGooglePlay: shizukuPretendToBeGooglePlay,
+          installedVersionOverride: installedVersionOverride,
           additionalAPKs: APKFiles.sublist(
             1,
           ).map((a) => DownloadedApk(dir.appId, a)).toList(),
@@ -958,6 +960,7 @@ class AppsProvider with ChangeNotifier {
     BuildContext? firstTimeWithContext, {
     bool needsBGWorkaround = false,
     bool shizukuPretendToBeGooglePlay = false,
+    String? installedVersionOverride,
     List<DownloadedApk> additionalAPKs = const [],
   }) async {
     if (firstTimeWithContext != null &&
@@ -1004,7 +1007,7 @@ class AppsProvider with ChangeNotifier {
       // We can't conditionally get rid of the 'await' as this causes install fails (BG process times out) - see #896
       // TODO: When fixed, update this function and the calls to it accordingly
       apps[file.appId]!.app.installedVersion =
-          apps[file.appId]!.app.latestVersion;
+          installedVersionOverride ?? apps[file.appId]!.app.latestVersion;
       await saveApps([
         apps[file.appId]!.app,
       ], attemptToCorrectInstallStatus: false);
@@ -1034,7 +1037,7 @@ class AppsProvider with ChangeNotifier {
     } else if (code == 0) {
       installed = true;
       apps[file.appId]!.app.installedVersion =
-          apps[file.appId]!.app.latestVersion;
+          installedVersionOverride ?? apps[file.appId]!.app.latestVersion;
       file.file.delete(recursive: true);
     }
     await saveApps([apps[file.appId]!.app]);
@@ -1374,6 +1377,91 @@ class AppsProvider with ChangeNotifier {
     }
 
     return installedIds;
+  }
+
+  Future<bool> downloadAndInstallSpecificAppVersion(
+    App app,
+    BuildContext context, {
+    NotificationsProvider? notificationsProvider,
+    bool useExisting = false,
+  }) async {
+    final notifications =
+        notificationsProvider ?? context.read<NotificationsProvider>();
+    if (apps[app.id] == null) {
+      throw ObtainiumError(tr('appNotFound'));
+    }
+
+    String targetVersion = app.latestVersion;
+    DownloadedApk? downloadedFile;
+    DownloadedDir? downloadedDir;
+    String id = app.id;
+    try {
+      var downloadedArtifact = await downloadApp(
+        app,
+        context,
+        notificationsProvider: notifications,
+        useExisting: useExisting,
+      );
+      if (downloadedArtifact is DownloadedApk) {
+        downloadedFile = downloadedArtifact;
+      } else {
+        downloadedDir = downloadedArtifact as DownloadedDir;
+      }
+      id = downloadedFile?.appId ?? downloadedDir!.appId;
+      if (apps[id] == null) {
+        throw ObtainiumError(tr('appNotFound'));
+      }
+
+      if (!settingsProvider.useShizuku) {
+        if (!(await settingsProvider.getInstallPermission(enforce: false))) {
+          throw ObtainiumError(tr('cancelled'));
+        }
+        await waitForUserToReturnToForeground(context);
+      } else {
+        switch ((await ShizukuApkInstaller().checkPermission())!) {
+          case 'services_not_found':
+            throw ObtainiumError(tr('shizukuBinderNotFound'));
+          case 'old_shizuku':
+            throw ObtainiumError(tr('shizukuOld'));
+          case 'old_android_with_adb':
+            throw ObtainiumError(tr('shizukuOldAndroidWithADB'));
+          case 'denied':
+            throw ObtainiumError(tr('cancelled'));
+        }
+      }
+
+      apps[id]?.downloadProgress = -1;
+      notifyListeners();
+
+      bool shizukuPretendToBeGooglePlay =
+          settingsProvider.shizukuPretendToBeGooglePlay ||
+          apps[id]!.app.additionalSettings['shizukuPretendToBeGooglePlay'] ==
+              true;
+      bool installed;
+      var contextIfNewInstall = apps[id]?.installedInfo == null ? context : null;
+      if (downloadedFile != null) {
+        installed = await installApk(
+          downloadedFile,
+          contextIfNewInstall,
+          shizukuPretendToBeGooglePlay: shizukuPretendToBeGooglePlay,
+          installedVersionOverride: targetVersion,
+        );
+      } else {
+        installed = await installApkDir(
+          downloadedDir!,
+          contextIfNewInstall,
+          shizukuPretendToBeGooglePlay: shizukuPretendToBeGooglePlay,
+          installedVersionOverride: targetVersion,
+        );
+      }
+      if (installed) {
+        notifications.cancel(UpdateNotification([]).id);
+      }
+      return installed;
+    } finally {
+      apps[id]?.downloadProgress = null;
+      notifyListeners();
+    }
   }
 
   Future<List<String>> downloadAppAssets(
